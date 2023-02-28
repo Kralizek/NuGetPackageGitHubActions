@@ -43,6 +43,7 @@ jobs:
         run: dotnet build --no-restore --configuration Release
 
       - name: Determine version
+        id: gitversion
         uses: gittools/actions/gitversion/execute@v0.9.7
         with:
           useConfigFile: true
