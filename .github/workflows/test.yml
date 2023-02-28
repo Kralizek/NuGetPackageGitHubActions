@@ -31,4 +31,11 @@ jobs:
         run: dotnet build --no-restore -p:TreatWarningsAsErrors=True -p:EnforceCodeStyleInBuild=True
 
       - name: Tests
-        run: dotnet test --no-build --no-restore
+        run: dotnet test --no-build --no-restore --logger "junit;LogFilePath=$(pwd)/outputs/tests/{assembly}/{framework}/TestResults.xml"
+
+      - name: Publish test results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files:
+            ./outputs/tests/**/TestResults.xml
