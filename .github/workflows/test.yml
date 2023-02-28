@@ -23,16 +23,12 @@ jobs:
         uses: actions/setup-dotnet@v3.0.3
         with:
           dotnet-version: 7.0.x
-        
-      - name: Restore tools
-        run: dotnet tool restore
 
       - name: Restore dependencies
         run: dotnet restore
 
       - name: Verify
-        run: dotnet build -p:TreatWarningsAsErrors=True -p:EnforceCodeStyleInBuild=True
+        run: dotnet build --no-restore -p:TreatWarningsAsErrors=True -p:EnforceCodeStyleInBuild=True
 
       - name: Tests
-        run: dotnet test
-        
+        run: dotnet test --no-build --no-restore
