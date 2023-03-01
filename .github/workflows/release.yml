@@ -8,6 +8,8 @@ on:
 jobs:
 
   release:
+    name: Release
+    concurrency: package
     runs-on: ubuntu-latest
 
     steps:
@@ -43,7 +45,7 @@ jobs:
 
       - name: Pack
         run: |
-          dotnet pack --configuration Release --include-symbols --include-source -p:Version=${{ steps.gitversion.outputs.semVer }} -o ./outputs/packages/ -p:SymbolPackageFormat=snupkg -p:DebugType=portable
+          dotnet pack --no-restore --no-build --configuration Release --include-symbols --include-source -p:Version=${{ steps.gitversion.outputs.semVer }} -o ./outputs/packages/ -p:SymbolPackageFormat=snupkg -p:DebugType=portable
 
       - name: Add to release
         uses: softprops/action-gh-release@v1
