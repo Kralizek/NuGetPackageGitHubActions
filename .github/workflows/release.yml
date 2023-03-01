@@ -58,3 +58,10 @@ jobs:
           dotnet nuget push ./outputs/packages/*.snupkg --api-key $NUGET_AUTH_TOKEN --source https://api.nuget.org/v3/index.json --skip-duplicate
         env:
           NUGET_AUTH_TOKEN: ${{ secrets.NUGET_TOKEN }}
+
+      - name: Push to GitHub Package Registry
+        env:
+          NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: | 
+          dotnet nuget push ./outputs/packages/*.nupkg --api-key $NUGET_AUTH_TOKEN --source https://nuget.pkg.github.com/Kralizek/index.json --skip-duplicate
+          dotnet nuget push ./outputs/packages/*.snupkg --api-key $NUGET_AUTH_TOKEN --source https://nuget.pkg.github.com/Kralizek/index.json --skip-duplicate
