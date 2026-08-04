@@ -2,10 +2,10 @@
   "version": 1,
   "isRoot": true,
   "tools": {
-    "gitversion.tool": {
-      "version": "5.11.1",
+    "dotnet-coverage": {
+      "version": "18.9.0",
       "commands": [
-        "dotnet-gitversion"
+        "dotnet-coverage"
       ]
     }
   }
