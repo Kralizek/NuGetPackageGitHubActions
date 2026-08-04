@@ -10,5 +10,8 @@ public static class SampleApi
     /// </summary>
     /// <param name="name">The name to greet.</param>
     /// <returns>A greeting message.</returns>
-    public static string Greet(string name) => $"Hello, {name}!";
+    public static string Greet(string name)
+    {
+        return $"Hello, {name}!";
+    }
 }
