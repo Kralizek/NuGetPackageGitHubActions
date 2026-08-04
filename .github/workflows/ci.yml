@@ -2,95 +2,172 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
-    tags:
-      - v*.*.*
+    branches: [master]
   pull_request:
-    branches: [main, master]
+    branches: [master]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'release' }}
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  CONFIGURATION: Release
+  ARTIFACTS_PATH: ./artifacts
 
 jobs:
-  test:
-    name: Tests
+  validate-and-pack:
+    name: Validate and pack
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3.3.0
-      
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v3.0.3
-        with:
-          dotnet-version: 7.0.x
+    permissions:
+      contents: read
 
-      - name: Restore dependencies
-        run: dotnet restore
-
-      - name: Verify
-        run: dotnet build --no-restore -p:TreatWarningsAsErrors=True -p:EnforceCodeStyleInBuild=True
-
-      - name: Tests
-        run: dotnet test --no-build --no-restore --logger "junit;LogFilePath=$(pwd)/outputs/tests/{assembly}/{framework}/TestResults.xml"
-
-      - name: Publish test results
-        uses: EnricoMi/publish-unit-test-result-action@v2
-        if: always()
-        with:
-          files:
-            ./outputs/tests/**/TestResults.xml
-
-  release:
-    name: Release
-    runs-on: ubuntu-latest
-    needs: test
-    if: startsWith(github.ref, 'refs/tags')
     steps:
       - name: Checkout
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v3.0.3
+        uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: 7.0.201
+          global-json-file: global.json
 
-      - name: Install GitVersion
-        uses: gittools/actions/gitversion/setup@v0.9.7
+      - name: Cache NuGet packages and tools
+        uses: actions/cache@v5
         with:
-          versionSpec: '5.x'
+          path: ~/.nuget/packages
+          key: >-
+            ${{ runner.os }}-nuget-${{ hashFiles(
+              'global.json',
+              'NuGet.config',
+              'Directory.Build.props',
+              'Directory.Packages.props',
+              '.config/dotnet-tools.json',
+              '**/*.csproj'
+            ) }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
 
       - name: Restore tools
         run: dotnet tool restore
 
-      - name: Restore dependencies
+      - name: Restore packages
         run: dotnet restore
 
-      - name: Build
-        run: dotnet build --no-restore --configuration Release
+      - name: Verify formatting
+        run: dotnet format --verify-no-changes --no-restore
 
-      - name: Determine version
-        id: gitversion
-        uses: gittools/actions/gitversion/execute@v0.9.7
-        with:
-          useConfigFile: true
+      - name: Build
+        run: dotnet build --configuration $CONFIGURATION --no-restore --warnaserror
+
+      - name: Test and collect coverage
+        run: >-
+          dotnet coverage collect
+          "dotnet test --configuration $CONFIGURATION --no-build --logger GitHubActions"
+          --output-format cobertura
+          --output $ARTIFACTS_PATH/coverage.cobertura.xml
 
       - name: Pack
-        run: |
-          dotnet pack --no-restore --configuration Release --include-symbols --include-source -p:Version=${{ steps.gitversion.outputs.semVer }} -o ./outputs/packages/ -p:SymbolPackageFormat=snupkg -p:DebugType=portable
+        run: >-
+          dotnet pack
+          ./src/NuGetLibrary/NuGetLibrary.csproj
+          --configuration $CONFIGURATION
+          --no-build
+          --output $ARTIFACTS_PATH/packages
 
-      - name: Add to release
-        uses: softprops/action-gh-release@v1
+      - name: Upload coverage
+        uses: actions/upload-artifact@v7
         with:
-          files: |
-            ./outputs/packages/*.nupkg
-            ./outputs/packages/*.snupkg
+          name: coverage
+          path: ${{ env.ARTIFACTS_PATH }}/coverage.cobertura.xml
+          if-no-files-found: error
 
-      - name: Push to NuGet
+      - name: Upload packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: nuget-packages
+          path: |
+            ${{ env.ARTIFACTS_PATH }}/packages/*.nupkg
+            ${{ env.ARTIFACTS_PATH }}/packages/*.snupkg
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: validate-and-pack
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v8
+        with:
+          name: nuget-packages
+          path: ./artifacts/packages
+
+      - name: Validate release metadata
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
-          dotnet nuget push ./outputs/packages/*.nupkg --api-key $NUGET_AUTH_TOKEN --source https://api.nuget.org/v3/index.json --skip-duplicate
-        env:
-          NUGET_AUTH_TOKEN: ${{ secrets.NUGET_TOKEN }}
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Unsupported release tag: $RELEASE_TAG" >&2
+            exit 1
+          fi
 
-      - name: Push to GitHub Package Registry
+          if [[ "$RELEASE_TAG" == *-* && "$RELEASE_PRERELEASE" != "true" ]]; then
+            echo "Prerelease tags must use a GitHub prerelease." >&2
+            exit 1
+          fi
+
+          if [[ "$RELEASE_TAG" != *-* && "$RELEASE_PRERELEASE" == "true" ]]; then
+            echo "Stable tags must use a stable GitHub release." >&2
+            exit 1
+          fi
+
+      - name: Log in to NuGet.org
+        if: github.event_name == 'release'
+        id: nuget-login
+        uses: nuget/login@v1
+        with:
+          user: Kralizek
+
+      - name: Publish to NuGet.org
+        if: github.event_name == 'release'
+        run: >-
+          dotnet nuget push
+          "./artifacts/packages/*.nupkg"
+          --source https://api.nuget.org/v3/index.json
+          --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}"
+          --skip-duplicate
+
+      - name: Attach packages to the GitHub release
+        if: github.event_name == 'release'
         env:
-          NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: | 
-          dotnet nuget push ./outputs/packages/*.nupkg --api-key $NUGET_AUTH_TOKEN --source https://nuget.pkg.github.com/Kralizek/index.json --skip-duplicate
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: >-
+          gh release upload "$RELEASE_TAG"
+          ./artifacts/packages/*.nupkg
+          ./artifacts/packages/*.snupkg
+          --repo "${{ github.repository }}"
+          --clobber
+
+      - name: Publish preview to GitHub Packages
+        if: github.event_name == 'workflow_dispatch'
+        run: >-
+          dotnet nuget push
+          "./artifacts/packages/*.nupkg"
+          --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
+          --api-key "${{ github.token }}"
+          --skip-duplicate
