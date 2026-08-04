@@ -5,17 +5,13 @@
     <MinVerDefaultPreReleaseIdentifiers>preview</MinVerDefaultPreReleaseIdentifiers>
     <MinVerAutoIncrement>minor</MinVerAutoIncrement>
 
-    <Deterministic>true</Deterministic>
-    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
-    <EmbedUntrackedSources>true</EmbedUntrackedSources>
-    <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <DebugType>portable</DebugType>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="DotNet.ReproducibleBuilds" Version="1.2.39" PrivateAssets="all" />
+    <PackageReference Include="DotNet.ReproducibleBuilds" Version="2.0.5" PrivateAssets="all" />
     <PackageReference Include="MinVer" Version="7.0.0" PrivateAssets="all" />
   </ItemGroup>
 
